@@ -1,0 +1,59 @@
+{
+  "name": "worldtv",
+  "productName": "WorldTV",
+  "version": "0.1.0",
+  "description": "Browse and watch freely available / free-to-air live TV channels from around the world, powered by the open iptv-org datasets.",
+  "author": "Surya8991",
+  "license": "MIT",
+  "main": "src/main/main.js",
+  "scripts": {
+    "postinstall": "node scripts/copy-vendor.js",
+    "vendor": "node scripts/copy-vendor.js",
+    "dev": "node scripts/copy-vendor.js && electron .",
+    "start": "electron .",
+    "build": "node scripts/copy-vendor.js",
+    "dist": "node scripts/copy-vendor.js && electron-builder --win nsis portable",
+    "dist:dir": "node scripts/copy-vendor.js && electron-builder --win --dir"
+  },
+  "dependencies": {
+    "electron-store": "^8.2.0",
+    "hls.js": "^1.5.17",
+    "sax": "^1.4.1"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.surya8991.worldtv",
+    "productName": "WorldTV",
+    "copyright": "Copyright © 2026 Surya8991. MIT License.",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "!**/*.map"
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "WorldTV"
+    },
+    "portable": {
+      "artifactName": "WorldTV-${version}-portable.exe"
+    }
+  }
+}

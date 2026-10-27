@@ -1,0 +1,15 @@
+node_modules/
+release/
+dist/
+out/
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Vendored browser libs are copied from node_modules at build time
+src/renderer/vendor/
+
+# Local dev cache / scratch
+.cache/
+*.local

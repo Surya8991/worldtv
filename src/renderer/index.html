@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; img-src 'self' https: http: data:; media-src 'self' https: http: blob: data:; connect-src 'self' https: http:; script-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline';" />
+  <title>WorldTV</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar -->
+    <aside id="sidebar">
+      <div class="brand">
+        <span class="brand-dot"></span>
+        <span class="brand-name">WorldTV</span>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active" data-view="all"><span>🌍</span> All channels</button>
+        <button class="nav-item" data-view="favorites"><span>★</span> Favorites</button>
+        <button class="nav-item" data-view="recent"><span>🕘</span> Recently watched</button>
+        <button class="nav-item" data-view="guide"><span>📺</span> Program guide</button>
+        <button class="nav-item" data-view="settings"><span>⚙️</span> Settings</button>
+      </nav>
+
+      <div class="filter-group">
+        <div class="filter-head">Service</div>
+        <div id="filter-services" class="filter-list"></div>
+      </div>
+      <div class="filter-group">
+        <div class="filter-head">Country</div>
+        <input id="country-search" class="mini-search" placeholder="Filter countries…" />
+        <div id="filter-countries" class="filter-list scroll"></div>
+      </div>
+      <div class="filter-group">
+        <div class="filter-head">Category</div>
+        <div id="filter-categories" class="filter-list scroll"></div>
+      </div>
+      <div class="filter-group">
+        <div class="filter-head">Language</div>
+        <div id="filter-languages" class="filter-list scroll"></div>
+      </div>
+
+      <div class="sidebar-foot">
+        <span id="data-meta">Loading…</span>
+        <button id="refresh-btn" title="Refresh channel data">⟳</button>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main id="main">
+      <header id="topbar">
+        <input id="search" type="search" placeholder="Search channels…" autocomplete="off" />
+        <div class="topbar-right">
+          <label class="toggle"><input type="checkbox" id="hide-dead" /> Hide dead</label>
+          <span id="result-count" class="muted"></span>
+        </div>
+      </header>
+
+      <section id="content">
+        <!-- Browse view -->
+        <div id="view-browse">
+          <div id="active-filters" class="chips"></div>
+          <div id="recent-row" class="recent-row hidden">
+            <div class="row-head">Recently watched</div>
+            <div id="recent-items" class="recent-items"></div>
+          </div>
+          <div id="grid" class="grid"></div>
+          <div id="grid-sentinel"></div>
+          <div id="empty" class="empty hidden">No channels match your filters.</div>
+        </div>
+
+        <!-- Guide view -->
+        <div id="view-guide" class="hidden">
+          <div class="guide-head">
+            <h2>Program guide</h2>
+            <p id="guide-status" class="muted"></p>
+          </div>
+          <div id="guide-body" class="guide-body"></div>
+        </div>
+
+        <!-- Settings view -->
+        <div id="view-settings" class="hidden">
+          <div class="settings-wrap">
+            <h2>Settings</h2>
+
+            <section class="card">
+              <h3>Playback & content</h3>
+              <label class="row"><input type="checkbox" id="set-healthcheck" /> Probe streams and flag dead channels</label>
+              <label class="row"><input type="checkbox" id="set-autohide" /> Auto-hide dead channels</label>
+              <label class="row"><input type="checkbox" id="set-nsfw" /> Include adult (NSFW) channels</label>
+            </section>
+
+            <section class="card">
+              <h3>Public IPTV playlists (one-click)</h3>
+              <p class="muted">Free, publicly available IPTV playlists. Click Add to merge them in; channels already in the catalog are skipped automatically. Paywalled/DRM services are never included.</p>
+              <div id="preset-list" class="src-list"></div>
+            </section>
+
+            <section class="card">
+              <h3>Custom M3U playlists</h3>
+              <p class="muted">Add your own publicly available / free-to-air playlist URLs. Channels are merged into the grid.</p>
+              <div class="inline-form">
+                <input id="pl-name" placeholder="Name (optional)" />
+                <input id="pl-url" placeholder="https://…/playlist.m3u" />
+                <button id="pl-add">Add</button>
+              </div>
+              <ul id="pl-list" class="src-list"></ul>
+            </section>
+
+            <section class="card">
+              <h3>EPG (program guide) sources</h3>
+              <p class="muted">Add standard XMLTV URLs (e.g. iptv-org/epg output or any <code>url-tvg</code> feed; <code>.gz</code> supported). Guide data shows where a channel id matches.</p>
+              <div class="inline-form">
+                <input id="epg-name" placeholder="Name (optional)" />
+                <input id="epg-url" placeholder="https://…/epg.xml(.gz)" />
+                <button id="epg-add">Add</button>
+              </div>
+              <ul id="epg-list" class="src-list"></ul>
+              <div class="row">
+                <button id="epg-preset">Add recommended EPG (epgshare01)</button>
+                <button id="epg-reload">Reload EPG now</button>
+                <span id="epg-status" class="muted"></span>
+              </div>
+            </section>
+
+            <section class="card">
+              <h3>About</h3>
+              <p class="muted" id="about-text"></p>
+              <p class="muted">Streams come strictly from the open <a href="#" data-ext="https://github.com/iptv-org/iptv">iptv-org</a> project — free-to-air / publicly available only. Paywalled or DRM services are not supported.</p>
+            </section>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Player -->
+    <section id="player-pane" class="hidden">
+      <div class="player-head">
+        <div class="now-playing">
+          <img id="pp-logo" alt="" />
+          <div>
+            <div id="pp-name" class="pp-name"></div>
+            <div id="pp-meta" class="pp-meta"></div>
+          </div>
+        </div>
+        <div class="player-actions">
+          <button id="pp-fav" title="Favorite">☆</button>
+          <button id="pp-pip" title="Picture in picture">⧉</button>
+          <button id="pp-full" title="Fullscreen">⛶</button>
+          <button id="pp-close" title="Close player">✕</button>
+        </div>
+      </div>
+      <div id="paywall-banner" class="paywall-banner hidden"></div>
+      <div class="video-wrap">
+        <video id="video" controls autoplay playsinline></video>
+        <div id="player-msg" class="player-msg hidden"></div>
+      </div>
+      <div id="epg-strip" class="epg-strip">
+        <div class="epg-now">
+          <span class="epg-label">NOW</span>
+          <span id="epg-now-title">—</span>
+          <span id="epg-now-time" class="muted"></span>
+        </div>
+        <div class="epg-next">
+          <span class="epg-label">NEXT</span>
+          <span id="epg-next-title">—</span>
+          <span id="epg-next-time" class="muted"></span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="vendor/hls.min.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
