@@ -15,7 +15,13 @@ const schema = {
     default: {
       includeNsfw: false,
       autoHideDead: true,
+      hidePaid: false,       // hide paid/subscription channels
       healthCheck: true,
+      workingOnly: false,    // show only channels probed as working
+      sortMode: 'name',      // 'name' | 'country' | 'working'
+      volume: 1,             // remembered player volume (0..1)
+      resumeLast: false,     // auto-open last channel on launch
+      lastChannelId: null,
       customPlaylists: [],   // array of { name, url }
       epgUrls: [],           // array of { name, url }
     },

@@ -35,6 +35,9 @@ const state = {
   filters: { service: null, country: null, category: null, language: null },
   search: '',
   hideDead: false,
+  hidePaid: false,
+  workingOnly: false,
+  sortMode: 'name',
   health: new Map(),       // id -> 'ok'|'dead'|'unknown'
   filtered: [],
   rendered: 0,
@@ -69,6 +72,11 @@ async function init() {
   refreshDataMeta();
   // Preload EPG if the user has sources configured.
   if ((state.settings.epgUrls || []).length) api.loadEpg();
+
+  // Resume last channel on launch if the user opted in.
+  if (state.settings.resumeLast && state.settings.lastChannelId && state.byId.has(state.settings.lastChannelId)) {
+    playChannel(state.settings.lastChannelId);
+  }
 }
 
 function applyCatalog(data) {
@@ -84,6 +92,12 @@ function applyCatalog(data) {
 
   $('#hide-dead').checked = !!state.settings.autoHideDead;
   state.hideDead = !!state.settings.autoHideDead;
+  $('#hide-paid').checked = !!state.settings.hidePaid;
+  state.hidePaid = !!state.settings.hidePaid;
+  $('#working-only').checked = !!state.settings.workingOnly;
+  state.workingOnly = !!state.settings.workingOnly;
+  state.sortMode = state.settings.sortMode || 'name';
+  $('#sort-mode').value = state.sortMode;
 
   renderFacets();
   renderSettings();
@@ -205,12 +219,27 @@ function applyFiltersAndRender() {
     if (f.language && !c.langCodes.includes(f.language)) return false;
     if (term && !c.name.toLowerCase().includes(term)) return false;
     if (state.hideDead && state.health.get(c.id) === 'dead') return false;
+    if (state.hidePaid && c.paywalled) return false;
+    if (state.workingOnly && state.health.get(c.id) !== 'ok') return false;
     return true;
   });
 
+  sortFiltered();
   $('#result-count').textContent = `${state.filtered.length.toLocaleString()} channels`;
   renderRecentRow();
   resetGrid();
+}
+
+function sortFiltered() {
+  if (state.view === 'recent') return; // keep recency order
+  const rank = (id) => (state.health.get(id) === 'ok' ? 0 : state.health.get(id) === 'dead' ? 2 : 1);
+  if (state.sortMode === 'country') {
+    state.filtered.sort((a, b) => (a.countryName || '').localeCompare(b.countryName || '') || a.name.localeCompare(b.name));
+  } else if (state.sortMode === 'working') {
+    state.filtered.sort((a, b) => rank(a.id) - rank(b.id) || a.name.localeCompare(b.name));
+  } else {
+    state.filtered.sort((a, b) => a.name.localeCompare(b.name));
+  }
 }
 
 function resetGrid() {
@@ -335,6 +364,7 @@ async function playChannel(id) {
   }
 
   state.recent = await api.pushRecent(id);
+  api.updateSettings({ lastChannelId: id });
   refreshNowNext(id);
 
   // Fetch all streams so we can fall back if the first one fails.
@@ -383,7 +413,13 @@ function loadStream(url) {
     let recovered = 0;
     hls.loadSource(url);
     hls.attachMedia(video);
-    hls.on(window.Hls.Events.MANIFEST_PARSED, () => { msg.classList.add('hidden'); video.play().catch(() => {}); });
+    hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
+      msg.classList.add('hidden');
+      video.play().catch(() => {});
+      populateQuality(hls);
+      populateSubs(hls);
+    });
+    hls.on(window.Hls.Events.SUBTITLE_TRACKS_UPDATED, () => populateSubs(hls));
     hls.on(window.Hls.Events.ERROR, (_e, data) => {
       if (!data.fatal) return;
       switch (data.type) {
@@ -418,11 +454,46 @@ function showPlayerMsg(text) {
   msg.classList.remove('hidden');
 }
 
+// Populate the quality selector from hls.js levels (Auto + each resolution).
+function populateQuality(hls) {
+  const sel = $('#pp-quality');
+  const levels = hls.levels || [];
+  if (levels.length < 2) { sel.classList.add('hidden'); return; }
+  sel.innerHTML = '<option value="-1">Auto</option>';
+  levels.forEach((l, i) => {
+    const label = l.height ? `${l.height}p` : (l.bitrate ? `${Math.round(l.bitrate / 1000)}k` : `Level ${i}`);
+    sel.insertAdjacentHTML('beforeend', `<option value="${i}">${label}</option>`);
+  });
+  sel.value = String(hls.currentLevel);
+  sel.classList.remove('hidden');
+  sel.onchange = () => { hls.currentLevel = parseInt(sel.value, 10); };
+}
+
+// Populate the subtitles/CC selector from hls.js subtitle tracks (Off + tracks).
+function populateSubs(hls) {
+  const sel = $('#pp-cc');
+  const tracks = hls.subtitleTracks || [];
+  if (!tracks.length) { sel.classList.add('hidden'); return; }
+  sel.innerHTML = '<option value="-1">CC: Off</option>';
+  tracks.forEach((t, i) => {
+    sel.insertAdjacentHTML('beforeend', `<option value="${i}">${escapeHtml(t.name || t.lang || `Track ${i + 1}`)}</option>`);
+  });
+  sel.value = String(hls.subtitleTrack);
+  sel.classList.remove('hidden');
+  sel.onchange = () => {
+    const v = parseInt(sel.value, 10);
+    hls.subtitleDisplay = v >= 0;
+    hls.subtitleTrack = v;
+  };
+}
+
 function teardownHls() {
   if (state.hls) { try { state.hls.destroy(); } catch {} state.hls = null; }
   const video = $('#video');
   video.removeAttribute('src');
   video.onerror = null;
+  $('#pp-quality').classList.add('hidden');
+  $('#pp-cc').classList.add('hidden');
 }
 
 function closePlayer() {
@@ -430,7 +501,38 @@ function closePlayer() {
   $('#video').pause();
   $('#player-pane').classList.add('hidden');
   $('#paywall-banner').classList.add('hidden');
+  clearSleepTimer();
   state.current = null;
+}
+
+// Sleep timer: cycles Off → 15 → 30 → 60 → 90 min; stops playback on expiry.
+const SLEEP_STEPS = [0, 15, 30, 60, 90];
+function cycleSleepTimer() {
+  const cur = state.sleepMinutes || 0;
+  const idx = SLEEP_STEPS.indexOf(cur);
+  const next = SLEEP_STEPS[(idx + 1) % SLEEP_STEPS.length];
+  clearSleepTimer();
+  state.sleepMinutes = next;
+  const btn = $('#pp-sleep');
+  if (next === 0) {
+    btn.textContent = '⏲';
+    btn.title = 'Sleep timer';
+    toast('Sleep timer off');
+  } else {
+    btn.textContent = `⏲${next}`;
+    btn.title = `Sleep timer: ${next} min`;
+    toast(`Sleep timer set: ${next} min`);
+    state.sleepTimer = setTimeout(() => {
+      toast('Sleep timer — stopping playback');
+      closePlayer();
+    }, next * 60 * 1000);
+  }
+}
+function clearSleepTimer() {
+  if (state.sleepTimer) { clearTimeout(state.sleepTimer); state.sleepTimer = null; }
+  state.sleepMinutes = 0;
+  const btn = $('#pp-sleep');
+  if (btn) { btn.textContent = '⏲'; btn.title = 'Sleep timer'; }
 }
 
 /* ---------- EPG now/next ---------- */
@@ -531,6 +633,8 @@ function renderSettings() {
   const s = state.settings;
   $('#set-healthcheck').checked = !!s.healthCheck;
   $('#set-autohide').checked = !!s.autoHideDead;
+  $('#set-hidepaid').checked = !!s.hidePaid;
+  $('#set-resume').checked = !!s.resumeLast;
   $('#set-nsfw').checked = !!s.includeNsfw;
 
   renderPresets();
@@ -646,6 +750,24 @@ function wireStaticEvents() {
     applyFiltersAndRender();
   });
 
+  $('#hide-paid').addEventListener('change', (e) => {
+    state.hidePaid = e.target.checked;
+    api.updateSettings({ hidePaid: e.target.checked });
+    applyFiltersAndRender();
+  });
+
+  $('#working-only').addEventListener('change', (e) => {
+    state.workingOnly = e.target.checked;
+    api.updateSettings({ workingOnly: e.target.checked });
+    applyFiltersAndRender();
+  });
+
+  $('#sort-mode').addEventListener('change', (e) => {
+    state.sortMode = e.target.value;
+    api.updateSettings({ sortMode: e.target.value });
+    applyFiltersAndRender();
+  });
+
   $('#refresh-btn').onclick = () => api.refresh(true);
 
   // Infinite scroll
@@ -673,7 +795,9 @@ function wireStaticEvents() {
 
   // Settings toggles
   $('#set-healthcheck').onchange = (e) => { state.settings.healthCheck = e.target.checked; api.updateSettings({ healthCheck: e.target.checked }); };
-  $('#set-autohide').onchange = (e) => { state.settings.autoHideDead = e.target.checked; $('#hide-dead').checked = e.target.checked; state.hideDead = e.target.checked; api.updateSettings({ autoHideDead: e.target.checked }); };
+  $('#set-autohide').onchange = (e) => { state.settings.autoHideDead = e.target.checked; $('#hide-dead').checked = e.target.checked; state.hideDead = e.target.checked; api.updateSettings({ autoHideDead: e.target.checked }); applyFiltersAndRender(); };
+  $('#set-hidepaid').onchange = (e) => { state.settings.hidePaid = e.target.checked; $('#hide-paid').checked = e.target.checked; state.hidePaid = e.target.checked; api.updateSettings({ hidePaid: e.target.checked }); applyFiltersAndRender(); };
+  $('#set-resume').onchange = (e) => { state.settings.resumeLast = e.target.checked; api.updateSettings({ resumeLast: e.target.checked }); };
   $('#set-nsfw').onchange = async (e) => { toast('Rebuilding catalog…'); await api.updateSettings({ includeNsfw: e.target.checked }); };
 
   $('#pl-add').onclick = async () => {
@@ -719,9 +843,66 @@ function wireStaticEvents() {
     if (ext) { e.preventDefault(); api.openExternal(ext.dataset.ext); }
   });
 
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !$('#player-pane').classList.contains('hidden') && !document.fullscreenElement) closePlayer();
+  $('#data-export').onclick = async () => {
+    const r = await api.exportData();
+    $('#backup-status').textContent = r.ok ? `Saved to ${r.path}` : (r.canceled ? '' : `Error: ${r.error || 'failed'}`);
+    if (r.ok) toast('Backup exported');
+  };
+  $('#data-import').onclick = async () => {
+    const r = await api.importData();
+    if (r.ok) { toast('Backup imported'); $('#backup-status').textContent = 'Imported — favorites & settings restored.'; }
+    else if (!r.canceled) $('#backup-status').textContent = `Error: ${r.error || 'failed'}`;
+  };
+
+  $('#pp-sleep').onclick = cycleSleepTimer;
+
+  document.addEventListener('keydown', onKeydown);
+
+  // Remember and restore player volume.
+  const video = $('#video');
+  if (typeof state.settings.volume === 'number') video.volume = state.settings.volume;
+  let volTimer = null;
+  video.addEventListener('volumechange', () => {
+    clearTimeout(volTimer);
+    volTimer = setTimeout(() => api.updateSettings({ volume: video.volume }), 400);
   });
+}
+
+// Keyboard: ↑/↓ zap channels, Space play/pause, ←/→ volume, F fullscreen,
+// M mute, P picture-in-picture, Esc close. Ignored while typing in a field.
+function onKeydown(e) {
+  const tag = (document.activeElement && document.activeElement.tagName) || '';
+  if (/INPUT|TEXTAREA|SELECT/.test(tag)) {
+    if (e.key === 'Escape') document.activeElement.blur();
+    return;
+  }
+  const playerOpen = !$('#player-pane').classList.contains('hidden');
+  const video = $('#video');
+  switch (e.key) {
+    case 'Escape':
+      if (playerOpen && !document.fullscreenElement) closePlayer();
+      break;
+    case 'ArrowDown': if (playerOpen) { e.preventDefault(); zap(1); } break;
+    case 'ArrowUp': if (playerOpen) { e.preventDefault(); zap(-1); } break;
+    case 'ArrowRight': if (playerOpen) { e.preventDefault(); video.volume = Math.min(1, video.volume + 0.1); } break;
+    case 'ArrowLeft': if (playerOpen) { e.preventDefault(); video.volume = Math.max(0, video.volume - 0.1); } break;
+    case ' ': case 'k':
+      if (playerOpen) { e.preventDefault(); if (video.paused) video.play().catch(() => {}); else video.pause(); }
+      break;
+    case 'f': if (playerOpen) $('#pp-full').click(); break;
+    case 'm': if (playerOpen) { video.muted = !video.muted; } break;
+    case 'p': if (playerOpen) $('#pp-pip').click(); break;
+    default: break;
+  }
+}
+
+// Jump to the previous/next channel in the current filtered list.
+function zap(dir) {
+  if (!state.filtered.length) return;
+  let idx = state.filtered.findIndex((c) => c.id === state.current);
+  if (idx === -1) idx = dir > 0 ? -1 : 0;
+  const next = (idx + dir + state.filtered.length) % state.filtered.length;
+  playChannel(state.filtered[next].id);
 }
 
 /* ---------- helpers ---------- */

@@ -27,12 +27,28 @@ function parseXmltvTime(s) {
   return Number.isNaN(t) ? null : t;
 }
 
+// Normalize a channel name for fuzzy matching: lowercase, drop quality/feed
+// noise and all non-alphanumerics.
+function normName(s) {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/\(.*?\)/g, ' ')
+    .replace(/\b(hd|sd|fhd|uhd|4k|1080p?|720p?|480p?|east|west|feed)\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, '');
+}
+
 class EpgIndex {
   constructor() {
     this.byChannel = new Map(); // xmltv channel id -> [{ start, stop, title, desc }]
+    this.nameToId = new Map();  // normalized display-name -> xmltv channel id
     this.loadedAt = null;
     this.sources = [];
     this.programmeCount = 0;
+  }
+
+  _addChannelName(id, name) {
+    const n = normName(name);
+    if (id && n && !this.nameToId.has(n)) this.nameToId.set(n, id);
   }
 
   _add(channelId, prog) {
@@ -48,21 +64,27 @@ class EpgIndex {
     this.loadedAt = Date.now();
   }
 
-  // Resolve a catalog channel id (possibly "id@feed") against the index.
-  _resolve(channelId) {
-    if (!channelId) return null;
-    if (this.byChannel.has(channelId)) return this.byChannel.get(channelId);
-    const base = channelId.split('@')[0];
-    if (this.byChannel.has(base)) return this.byChannel.get(base);
+  // Resolve a catalog channel against the index: first by id (and base id),
+  // then by fuzzy display-name match when a name is supplied.
+  _resolve(channelId, name) {
+    if (channelId) {
+      if (this.byChannel.has(channelId)) return this.byChannel.get(channelId);
+      const base = channelId.split('@')[0];
+      if (this.byChannel.has(base)) return this.byChannel.get(base);
+    }
+    if (name) {
+      const id = this.nameToId.get(normName(name));
+      if (id && this.byChannel.has(id)) return this.byChannel.get(id);
+    }
     return null;
   }
 
-  hasChannel(channelId) {
-    return this._resolve(channelId) != null;
+  hasChannel(channelId, name) {
+    return this._resolve(channelId, name) != null;
   }
 
-  nowNext(channelId, at = Date.now()) {
-    const arr = this._resolve(channelId);
+  nowNext(channelId, at = Date.now(), name) {
+    const arr = this._resolve(channelId, name);
     if (!arr || arr.length === 0) return { now: null, next: null };
     let now = null;
     let next = null;
@@ -80,8 +102,8 @@ class EpgIndex {
   }
 
   // Programmes overlapping [from, to].
-  range(channelId, from, to) {
-    const arr = this._resolve(channelId);
+  range(channelId, from, to, name) {
+    const arr = this._resolve(channelId, name);
     if (!arr) return [];
     return arr
       .map((p, i) => ({
@@ -96,8 +118,9 @@ class EpgIndex {
 function parseXmltvStream(nodeStream, index, sourceLabel) {
   return new Promise((resolve, reject) => {
     const parser = sax.createStream(true, { trim: true, lowercase: true });
-    let cur = null;      // current <programme> being built
-    let textTarget = null; // 'title' | 'desc' | null
+    let cur = null;        // current <programme> being built
+    let curChannel = null; // current <channel> being built
+    let textTarget = null; // 'title' | 'desc' | 'channame' | null
 
     parser.on('opentag', (node) => {
       if (node.name === 'programme') {
@@ -108,6 +131,10 @@ function parseXmltvStream(nodeStream, index, sourceLabel) {
           title: '',
           desc: '',
         };
+      } else if (node.name === 'channel') {
+        curChannel = { id: node.attributes.id, name: '' };
+      } else if (curChannel && node.name === 'display-name') {
+        textTarget = 'channame';
       } else if (cur && node.name === 'title') {
         textTarget = 'title';
       } else if (cur && node.name === 'desc') {
@@ -116,13 +143,21 @@ function parseXmltvStream(nodeStream, index, sourceLabel) {
     });
 
     parser.on('text', (t) => {
-      if (cur && textTarget && t) {
+      if (!t) return;
+      if (curChannel && textTarget === 'channame') {
+        if (!curChannel.name) curChannel.name = t;
+      } else if (cur && textTarget && (textTarget === 'title' || textTarget === 'desc')) {
         if (!cur[textTarget]) cur[textTarget] = t;
       }
     });
 
     parser.on('closetag', (name) => {
-      if (name === 'title' || name === 'desc') {
+      if (name === 'display-name') {
+        textTarget = null;
+      } else if (name === 'channel' && curChannel) {
+        index._addChannelName(curChannel.id, curChannel.name);
+        curChannel = null;
+      } else if (name === 'title' || name === 'desc') {
         textTarget = null;
       } else if (name === 'programme' && cur) {
         index._add(cur.channel, {

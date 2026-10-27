@@ -66,10 +66,24 @@ awaiting the user's go-ahead per workspace convention).
   privilege on this account). Fixed with `build.win.signAndEditExecutable: false`
   + `CSC_IDENTITY_AUTO_DISCOVERY=false`. NSIS + portable now build.
 
+### Published + 10 features (2026-10-27)
+- Repo created PUBLIC: https://github.com/Surya8991/worldtv (baseline commit 31eb28b).
+- Built the "ten must-have features":
+  1. Hide-paid toggle (topbar + settings)   2. Sort (name/country/working-first)
+  3. Working-only filter                     4. Keyboard zapping + shortcuts
+     (↑/↓ chan, Space, ←/→ vol, F, M, P, Esc)
+  5. Remember volume + last channel (+ resume-on-launch opt-in)
+  6. Quality/resolution selector (hls levels)  7. Subtitle/CC selector (hls tracks)
+  8. Name-based EPG matching (epg.js parses <channel> display-names → normName
+     index; nowNext/range accept a name fallback; main passes catalog name)
+  9. Export/import favorites+settings (native dialogs, data:export/import IPC)
+  10. Sleep timer (15/30/60/90 → stops playback)
+- New settings persisted: hidePaid, workingOnly, sortMode, volume, resumeLast,
+  lastChannelId. Verified: app launches clean, EPG name-resolution unit-tested.
+
 ### Pending / next
-- Commit + push to a new `Surya8991/worldtv` GitHub repo (waiting on user).
-- Optional: resizable/undockable player, remember last-played, keyboard zapping,
-  EPG id-matching across non-iptv-org sources.
+- Commit + push the 10-feature set (in progress).
+- Optional: multi-view (2×2), first-run onboarding, radio mode, theater/mini player.
 
 ### Blocked
 - None.

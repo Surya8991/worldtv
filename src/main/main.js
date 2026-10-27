@@ -4,8 +4,9 @@
 // WorldTV streams strictly free-to-air / publicly available channels from the
 // open iptv-org project. No paywalled or DRM services.
 
-const { app, BrowserWindow, ipcMain, shell, Menu, session } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, session, dialog } = require('electron');
 const path = require('path');
+const fsp = require('fs/promises');
 
 const { DataStore } = require('./dataStore');
 const {
@@ -376,13 +377,52 @@ function registerIpc() {
   ipcMain.handle('epg:nownext', async (_e, id) => {
     const res = await ensureEpg();
     if (!res.index) return { now: null, next: null };
-    return res.index.nowNext(id);
+    const ch = byId && byId.get(id);
+    return res.index.nowNext(id, Date.now(), ch ? ch.name : null);
   });
 
   ipcMain.handle('epg:guide', async (_e, { id, from, to }) => {
     const res = await ensureEpg();
     if (!res.index) return [];
-    return res.index.range(id, from, to);
+    const ch = byId && byId.get(id);
+    return res.index.range(id, from, to, ch ? ch.name : null);
+  });
+
+  ipcMain.handle('data:export', async () => {
+    const payload = {
+      app: 'WorldTV', version: app.getVersion(), exportedAt: Date.now(),
+      favorites: persist.getFavorites(),
+      recent: persist.getRecent(),
+      settings: persist.getSettings(),
+    };
+    const { canceled, filePath } = await dialog.showSaveDialog(win, {
+      title: 'Export WorldTV data',
+      defaultPath: 'worldtv-backup.json',
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    });
+    if (canceled || !filePath) return { ok: false, canceled: true };
+    await fsp.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8');
+    return { ok: true, path: filePath };
+  });
+
+  ipcMain.handle('data:import', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+      title: 'Import WorldTV data',
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+      properties: ['openFile'],
+    });
+    if (canceled || !filePaths || !filePaths[0]) return { ok: false, canceled: true };
+    try {
+      const parsed = JSON.parse(await fsp.readFile(filePaths[0], 'utf8'));
+      if (Array.isArray(parsed.favorites)) persist.store.set('favorites', parsed.favorites);
+      if (Array.isArray(parsed.recent)) persist.store.set('recent', parsed.recent);
+      if (parsed.settings && typeof parsed.settings === 'object') persist.updateSettings(parsed.settings);
+      await ensureCatalog({ rebuild: true });
+      send('catalog:ready', catalogPayload());
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String(err && err.message ? err.message : err) };
+    }
   });
 
   ipcMain.handle('app:openExternal', async (_e, url) => {

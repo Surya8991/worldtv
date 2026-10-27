@@ -53,7 +53,14 @@
       <header id="topbar">
         <input id="search" type="search" placeholder="Search channels…" autocomplete="off" />
         <div class="topbar-right">
+          <select id="sort-mode" title="Sort channels">
+            <option value="name">Sort: Name</option>
+            <option value="country">Sort: Country</option>
+            <option value="working">Sort: Working first</option>
+          </select>
+          <label class="toggle"><input type="checkbox" id="working-only" /> Working only</label>
           <label class="toggle"><input type="checkbox" id="hide-dead" /> Hide dead</label>
+          <label class="toggle"><input type="checkbox" id="hide-paid" /> Hide paid</label>
           <span id="result-count" class="muted"></span>
         </div>
       </header>
@@ -89,6 +96,8 @@
               <h3>Playback & content</h3>
               <label class="row"><input type="checkbox" id="set-healthcheck" /> Probe streams and flag dead channels</label>
               <label class="row"><input type="checkbox" id="set-autohide" /> Auto-hide dead channels</label>
+              <label class="row"><input type="checkbox" id="set-hidepaid" /> Hide paid / subscription channels</label>
+              <label class="row"><input type="checkbox" id="set-resume" /> Resume last channel on launch</label>
               <label class="row"><input type="checkbox" id="set-nsfw" /> Include adult (NSFW) channels</label>
             </section>
 
@@ -126,6 +135,16 @@
             </section>
 
             <section class="card">
+              <h3>Backup</h3>
+              <p class="muted">Save or restore your favorites, recently-watched, custom playlists and settings as a JSON file.</p>
+              <div class="row">
+                <button id="data-export">Export…</button>
+                <button id="data-import">Import…</button>
+                <span id="backup-status" class="muted"></span>
+              </div>
+            </section>
+
+            <section class="card">
               <h3>About</h3>
               <p class="muted" id="about-text"></p>
               <p class="muted">Streams come strictly from the open <a href="#" data-ext="https://github.com/iptv-org/iptv">iptv-org</a> project — free-to-air / publicly available only. Paywalled or DRM services are not supported.</p>
@@ -146,6 +165,9 @@
           </div>
         </div>
         <div class="player-actions">
+          <select id="pp-quality" class="pp-select hidden" title="Video quality"></select>
+          <select id="pp-cc" class="pp-select hidden" title="Subtitles / captions"></select>
+          <button id="pp-sleep" title="Sleep timer">⏲</button>
           <button id="pp-fav" title="Favorite">☆</button>
           <button id="pp-pip" title="Picture in picture">⧉</button>
           <button id="pp-full" title="Fullscreen">⛶</button>

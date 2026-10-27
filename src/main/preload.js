@@ -44,6 +44,10 @@ contextBridge.exposeInMainWorld('worldtv', {
   nowNext: (id) => ipcRenderer.invoke('epg:nownext', id),
   guide: (id, from, to) => ipcRenderer.invoke('epg:guide', { id, from, to }),
 
+  // Backup
+  exportData: () => ipcRenderer.invoke('data:export'),
+  importData: () => ipcRenderer.invoke('data:import'),
+
   // Misc
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
   getAppInfo: () => ipcRenderer.invoke('app:info'),

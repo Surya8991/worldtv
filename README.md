@@ -28,6 +28,19 @@ free-to-air live TV channels** from around the world, powered by the open
 - **Background health-checker** that probes streams and flags/hides dead channels (these feeds break often), with automatic fallback to a channel's alternate streams when one fails.
 - **Offline-tolerant**: datasets are cached in your local app-data folder; the app opens fast and keeps working after the first sync, refreshing nightly or on demand.
 
+### Player & navigation
+- **Keyboard / TV zapping**: ↑/↓ previous/next channel, Space play-pause, ←/→ volume, `F` fullscreen, `M` mute, `P` picture-in-picture, Esc close.
+- **Quality selector** (choose resolution or Auto) and **subtitles/CC** toggle where the stream provides them.
+- **Remembers** your volume and last channel; optional **resume last channel on launch**.
+- **Sleep timer** (15 / 30 / 60 / 90 min) that stops playback.
+
+### Organizing & filtering
+- **Sort** by name, country, or working-first; **Working only** and **Hide paid** / **Hide dead** quick toggles.
+- **Export / import** your favorites, recently-watched, playlists and settings as a JSON backup.
+
+### Guide
+- **EPG matches by channel id and by name** — adding a standard XMLTV source lights up now/next and the guide for far more channels, even when ids differ.
+
 ## Data sources
 
 All channel metadata and streams come from the public iptv-org API:
